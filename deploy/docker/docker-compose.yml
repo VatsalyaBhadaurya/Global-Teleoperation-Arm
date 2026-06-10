@@ -1,0 +1,40 @@
+# Cloud-side stack: signaling server + TURN/STUN (+ optional static operator UI).
+#
+# The leader/follower gateways run on the robot-side machines (see
+# services/leader-gateway/Dockerfile and services/follower-gateway/Dockerfile)
+# and are not part of this compose file.
+#
+# Usage:
+#   cd deploy/docker
+#   cp .env.example .env   # edit values
+#   docker compose up -d --build
+services:
+  signaling-server:
+    build:
+      context: ../..
+      dockerfile: services/signaling-server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      TELEOP_API_KEY: ${TELEOP_API_KEY:-}
+      TELEOP_CLAIM_TIMEOUT_S: ${TELEOP_CLAIM_TIMEOUT_S:-5.0}
+      TELEOP_HEARTBEAT_TIMEOUT_S: ${TELEOP_HEARTBEAT_TIMEOUT_S:-15.0}
+    restart: unless-stopped
+
+  coturn:
+    image: coturn/coturn:4.6
+    network_mode: host
+    volumes:
+      - ../coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    restart: unless-stopped
+
+  operator-ui:
+    build:
+      context: ../..
+      dockerfile: apps/operator-ui/Dockerfile
+      args:
+        VITE_SIGNALING_URL: ${VITE_SIGNALING_URL:-ws://localhost:8080/ws}
+    ports:
+      - "8081:80"
+    restart: unless-stopped

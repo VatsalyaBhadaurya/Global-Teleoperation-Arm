@@ -1,0 +1,12 @@
+{
+  "name": "global-teleoperation",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "shared/types"
+  ],
+  "dependencies": {
+    "@rolldown/binding-win32-x64-msvc": "^1.0.3"
+  }
+}

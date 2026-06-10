@@ -1,0 +1,647 @@
+Build a browser-based remote teleoperation system for an existing 6-DOF leader-follower robotic arm setup.
+
+The local control scripts already exist:
+
+leader.py
+
+follower.py
+
+The local ROS 2 topics already exist:
+
+gripper_cam
+
+global_cam
+
+leader_jointstates
+
+leader_command
+
+follower_jointstates
+
+follower_command
+
+Do not rewrite the local arm-control logic unless necessary for hooks. Build the remote layer around it:
+
+operator web UI
+
+signaling server
+
+leader-side gateway
+
+follower-side gateway
+
+WebRTC video transport
+
+WebRTC data-channel transport
+
+session ownership + safety behavior
+
+deployment-ready hosting setup
+
+Product goal
+The finished system should let a remote operator open a browser, connect to the robot session, view the follower arm’s wrist/gripper camera and global environment camera, request control, and teleoperate the follower arm remotely through the existing leader-follower stack.
+
+The remote layer should:
+
+stream gripper_cam and global_cam to the browser over WebRTC video tracks
+
+send teleop/state/control messages over a WebRTC data channel in structured JSON form
+
+keep ROS 2 local to each machine rather than exposing raw ROS traffic over the internet
+
+use a signaling server for WebRTC setup and TURN/STUN for NAT traversal
+
+Hosting topology
+Host only the coordination services on the cloud. Run robot-facing logic on the local machines.
+
+Cloud-hosted
+Signaling server on a public VPS.
+
+TURN/STUN server on a public VPS, likely coturn, possibly same machine as signaling for v1.
+
+Leader/operator side
+browser UI
+
+leader gateway
+
+existing leader.py
+
+Follower/robot side
+follower gateway
+
+existing follower.py
+
+camera publishers feeding gripper_cam and global_cam
+
+After signaling, media and data should go peer-to-peer when possible, with TURN relay fallback when direct connectivity fails.
+
+System modules
+Implement these modules.
+
+1. Operator UI
+A browser application for:
+
+viewing gripper_cam
+
+viewing global_cam
+
+seeing connection/session/robot state
+
+requesting and releasing control
+
+triggering enable/disable, clutch, estop, home, gripper open/close
+
+2. Signaling server
+A backend service for:
+
+creating and joining sessions
+
+authenticating participants
+
+exchanging WebRTC offer/answer
+
+exchanging ICE candidates
+
+tracking roles and control ownership
+
+session cleanup on disconnect
+
+3. Leader gateway
+A process near leader.py that:
+
+subscribes to leader_jointstates
+
+subscribes to or consumes leader_command
+
+packages leader state and control intent into network messages
+
+sends them over WebRTC data channel
+
+receives follower status/ack
+
+4. Follower gateway
+A process near follower.py that:
+
+subscribes to follower_jointstates
+
+subscribes to follower_command
+
+subscribes to gripper_cam
+
+subscribes to global_cam
+
+publishes camera video as WebRTC tracks
+
+receives teleop messages over data channel
+
+validates them
+
+injects accepted actions into the local control path used by follower.py
+
+sends status/ack/telemetry back to the operator
+
+5. Shared protocol package
+A shared schema library for:
+
+message types
+
+protocol version
+
+validation rules
+
+enums for session and teleop state
+
+UI specification
+The browser UI should contain:
+
+Video area
+large main panel for gripper_cam
+
+smaller panel for global_cam
+
+stream status badges for each video feed
+
+Control area
+connect / disconnect
+
+request control / release control
+
+enable / disable
+
+clutch toggle
+
+estop
+
+home
+
+gripper open / close
+
+Status area
+signaling connected
+
+peer connected
+
+direct or TURN relay
+
+teleop ownership state
+
+robot mode
+
+estop state
+
+packet age
+
+RTT estimate
+
+last follower update timestamp
+
+leader connected / follower connected
+
+UX rules
+UI opens in read-only mode.
+
+Teleop buttons disabled until control is claimed.
+
+Motion commands disabled until teleop is explicitly armed.
+
+E-stop visible at all times.
+
+Ownership loss or stale session should visibly lock the UI.
+
+ROS topic assumptions
+Use the existing topics as the bridge surface.
+
+Leader side
+leader_jointstates: current leader-arm measured state
+
+leader_command: local operator command state or mode state
+
+Follower side
+follower_jointstates: current follower-arm measured state
+
+follower_command: follower-side state/ack/error/mode
+
+gripper_cam: wrist or gripper view
+
+global_cam: scene view
+
+Do not mirror all ROS traffic over the network. Only bridge the minimum needed teleop data.
+
+Network protocol
+Use structured JSON messages over WebRTC data channel for v1. OpenTera-style teleop systems explicitly use JSON over data channel for teleoperation commands and responses.
+
+Every message should include:
+
+protocol_version
+
+type
+
+session_id
+
+timestamp
+
+Core message types
+Session messages
+session.join
+
+session.joined
+
+session.leave
+
+session.error
+
+Ownership messages
+teleop.claim
+
+teleop.claimed
+
+teleop.release
+
+teleop.ownership
+
+Teleop control messages
+teleop.enable
+
+teleop.disable
+
+teleop.clutch
+
+teleop.estop
+
+teleop.home
+
+teleop.gripper
+
+State messages
+teleop.leader_state
+
+teleop.follower_state
+
+teleop.status
+
+teleop.ack
+
+teleop.error
+
+teleop.heartbeat
+
+teleop.latency
+
+Example message schemas
+teleop.leader_state
+json
+{
+  "protocol_version": 1,
+  "type": "teleop.leader_state",
+  "session_id": "sess_123",
+  "operator_id": "op_001",
+  "seq": 1024,
+  "timestamp": 1717999999.123,
+  "leader_jointstates": [0.11, -0.32, 1.22, 0.43, -0.21, 0.78],
+  "gripper": 0.35,
+  "enabled": true,
+  "clutched": false
+}
+teleop.follower_state
+json
+{
+  "protocol_version": 1,
+  "type": "teleop.follower_state",
+  "session_id": "sess_123",
+  "seq_ack": 1024,
+  "timestamp": 1717999999.156,
+  "follower_jointstates": [0.10, -0.31, 1.20, 0.42, -0.20, 0.76],
+  "robot_mode": "TRACKING",
+  "estopped": false,
+  "clutched": false,
+  "packet_age_ms": 18
+}
+teleop.status
+json
+{
+  "protocol_version": 1,
+  "type": "teleop.status",
+  "session_id": "sess_123",
+  "teleop_state": "ARMED",
+  "owner_operator_id": "op_001",
+  "peer_mode": "P2P",
+  "rtt_ms": 63,
+  "video_ok": true,
+  "data_ok": true
+}
+State machine
+Implement a clear teleop state machine.
+
+Session states
+DISCONNECTED
+
+CONNECTED
+
+READY
+
+CLAIMED
+
+ARMED
+
+CLUTCHED
+
+FROZEN
+
+ESTOPPED
+
+Expected transitions
+DISCONNECTED -> CONNECTED after signaling and peer setup
+
+CONNECTED -> READY after video/data are healthy
+
+READY -> CLAIMED after operator gets ownership
+
+CLAIMED -> ARMED after enable
+
+ARMED -> CLUTCHED when clutch is active
+
+ARMED -> FROZEN on stale packet / peer loss / watchdog timeout
+
+ANY -> ESTOPPED on estop
+
+ESTOPPED -> READY only after explicit reset path
+
+Do not auto-arm on reconnect. Require explicit operator action after reconnect.
+
+Ownership model
+Only one operator may control the robot at a time.
+
+Implement:
+
+single active owner
+
+ownership token or owner operator id
+
+claim timeout on disconnect
+
+non-owner read-only mode
+
+server-side and follower-side ownership validation
+
+Follower gateway must reject action packets if:
+
+session is not owner
+
+teleop is not armed
+
+estop is active
+
+packet is stale or replayed
+
+Safety rules
+Safety is mandatory.
+
+Required checks
+stale packet timeout
+
+monotonic sequence validation
+
+ownership validation
+
+estop always available
+
+safe hold/freeze on disconnect
+
+explicit re-arm after reconnect
+
+ignore motion when video/data health is invalid, if configured
+
+Safe behavior
+if data channel dies, follower enters FROZEN
+
+if signaling disconnects but data is alive, continue only if peer is healthy and watchdog permits
+
+if peer fully dies, freeze
+
+if estop received, no motion commands should be accepted until reset
+
+if command packet age exceeds threshold, freeze and publish error state
+
+WebRTC transport rules
+Video
+Use separate WebRTC video tracks for gripper_cam and global_cam.
+
+gripper_cam is priority stream.
+
+global_cam can degrade first under bandwidth pressure.
+
+Data channel
+Use data channel for:
+
+ownership
+
+state
+
+commands
+
+heartbeat
+
+latency
+
+acks/errors
+
+Suggested rules:
+
+frequent leader-state packets: latest-wins semantics
+
+critical commands like estop/claim/release: reliable delivery path
+
+include timestamps and sequence ids in all actionable messages
+
+How action flows end to end
+Operator opens browser UI.
+
+Browser connects to signaling server.
+
+Follower gateway connects to signaling server.
+
+Leader gateway connects to signaling server.
+
+Signaling coordinates WebRTC connection.
+
+Follower gateway starts streaming gripper_cam and global_cam as video tracks.
+
+Operator sees video and status in read-only mode.
+
+Operator requests control.
+
+Signaling/server grants ownership.
+
+Operator arms teleop.
+
+Leader gateway sends teleop.leader_state packets from leader_jointstates.
+
+Follower gateway receives packets, validates them, then injects them into the local control path that follower.py uses.
+
+follower.py drives the arm locally.
+
+Follower gateway sends teleop.follower_state and status back.
+
+Browser updates telemetry.
+
+On disconnect or stale packets, follower gateway freezes teleop and reports FROZEN.
+
+How cameras flow end to end
+Robot-side camera nodes publish gripper_cam and global_cam.
+
+Follower gateway subscribes to those topics.
+
+Follower gateway encodes frames into browser-compatible WebRTC video.
+
+Browser receives both video tracks and renders them in the UI.
+
+API surface
+Signaling server WebSocket API
+Support events such as:
+
+join_session
+
+leave_session
+
+offer
+
+answer
+
+ice_candidate
+
+claim_control
+
+release_control
+
+heartbeat
+
+session_state
+
+Optional HTTP endpoints
+POST /sessions
+
+GET /sessions/:id
+
+POST /sessions/:id/claim
+
+POST /sessions/:id/release
+
+GET /health
+
+Recommended repo structure
+text
+remote-teleop/
+  apps/
+    operator-ui/
+  services/
+    signaling-server/
+    leader-gateway/
+    follower-gateway/
+  shared/
+    protocol/
+    types/
+  deploy/
+    coturn/
+    docker/
+  docs/
+    architecture/
+    protocol/
+    runbooks/
+Suggested tech choices
+Keep the stack simple and close to your current system.
+
+Frontend
+React or Vue
+
+native browser WebRTC APIs
+
+state machine for session/teleop UI
+
+Signaling backend
+FastAPI or Node.js with WebSocket support
+
+Gateways
+Python, to stay close to existing leader.py and follower.py
+
+aiortc or a WebRTC wrapper appropriate for Python integration
+
+Infra
+one VPS for signaling + coturn for v1
+
+HTTPS/WSS in production
+
+Milestone checklist
+Milestone 1: Read-only remote view
+signaling server created
+
+follower gateway created
+
+browser UI created
+
+browser can connect and display both cameras
+
+follower state visible in UI
+
+Milestone 2: Session ownership
+operator authentication/session identity
+
+request control / release control
+
+single-owner enforcement
+
+read-only mode for non-owner users
+
+Milestone 3: Command controls
+enable / disable
+
+clutch
+
+estop
+
+home
+
+gripper open / close
+
+follower status and ack loop
+
+Milestone 4: Continuous teleop
+leader gateway publishes leader-state packets
+
+follower gateway injects packets into local follower path
+
+watchdog timeout implemented
+
+stale packet handling implemented
+
+Milestone 5: Production hardening
+TURN fallback working
+
+reconnect logic
+
+logs and telemetry
+
+error toasts and runbook
+
+deployment scripts and docs
+
+Acceptance criteria
+Consider the system complete when:
+
+a remote operator can connect through a browser
+
+both gripper_cam and global_cam are visible remotely
+
+exactly one operator can own teleop at a time
+
+operator can arm teleop and send commands safely
+
+follower receives leader-state packets and acts through existing local control
+
+follower reports back state continuously
+
+disconnects or stale packets cause safe freeze
+
+system works over public internet with TURN fallback when needed
+
+Direct handoff prompt
+Build a browser-based remote teleoperation layer around existing ROS 2 leader.py and follower.py. Use WebRTC video tracks for gripper_cam and global_cam, WebRTC data channels for structured JSON teleop/state messages, a signaling server for offer/answer and ICE exchange, a leader gateway to bridge leader_jointstates and leader_command, and a follower gateway to bridge follower_jointstates, follower_command, and camera topics while injecting accepted remote commands into the local follower control path. Enforce single-operator ownership, watchdog-safe freeze on disconnect or stale packets, and explicit teleop arming before motion. Host signaling and TURN on a public VPS; keep gateways and robot control on local leader/follower machines.
