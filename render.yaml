@@ -1,0 +1,39 @@
+# Render Blueprint for the cloud-hosted half of the teleop stack
+# (signaling server + operator UI). The leader/follower gateways and
+# coturn/TURN are NOT deployed here -- gateways run on the robot/operator
+# machines, and Render does not support the UDP port range coturn needs.
+#
+# Deploy: push this repo to GitHub, then in the Render dashboard choose
+# "New > Blueprint" and select the repo. Render will create both services
+# below automatically.
+
+services:
+  - type: web
+    name: teleop-signaling
+    env: docker
+    dockerfilePath: ./services/signaling-server/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: TELEOP_API_KEY
+        generateValue: true
+      - key: TELEOP_CLAIM_TIMEOUT_S
+        value: "5.0"
+      - key: TELEOP_HEARTBEAT_TIMEOUT_S
+        value: "15.0"
+
+  - type: web
+    name: teleop-operator-ui
+    env: static
+    buildCommand: npm install && npm run build -w operator-ui
+    staticPublishPath: apps/operator-ui/dist
+    envVars:
+      # Set this after the first deploy, once you know the signaling
+      # service's URL, e.g. wss://teleop-signaling.onrender.com/ws
+      - key: VITE_SIGNALING_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
