@@ -6,8 +6,8 @@ from so101_ros2.lerobot.so101 import SO101
 
 class LeRobotJointStatePublisher(Node):
 
-    def _init_(self):
-        super()._init_('lerobot_joint_state_publisher')
+    def __init__(self):
+        super().__init__('lerobot_joint_state_publisher')
 
         # Declare ROS Parameters
         self.declare_parameter('robot_name', "so101_leader")
@@ -104,5 +104,5 @@ def main(args=None):
         lerobot_publisher.destroy_node()
         rclpy.shutdown()
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     main()
