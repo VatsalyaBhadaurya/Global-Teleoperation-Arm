@@ -29,9 +29,15 @@ function getSessionId(): string {
   return params.get("session") ?? "sess_default";
 }
 
+function getToken(): string | undefined {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("token") ?? undefined;
+}
+
 function App() {
   const [operatorId] = useState(getOperatorId);
   const [sessionId] = useState(getSessionId);
+  const [token] = useState(getToken);
   const [state, dispatch] = useReducer(sessionReducer, operatorId, createInitialState);
   const [now, setNow] = useState(() => Date.now());
   const [videoTracks, setVideoTracks] = useState<VideoTracks>(NO_TRACKS);
@@ -46,6 +52,7 @@ function App() {
     url: SIGNALING_URL,
     sessionId,
     operatorId,
+    token,
     onMessage: (message) => {
       dispatch({ type: "message", message, now });
       if (message.type === "webrtc.answer") {
