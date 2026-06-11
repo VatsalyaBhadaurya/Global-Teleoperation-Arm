@@ -148,7 +148,7 @@ class MockFollowerROS(MockROSInterface):
 def create_ros_backend() -> ROSInterfaceBase:
     """Select the ROS backend via the `TELEOP_ROS_BACKEND` env var (default `mock`)."""
 
-    backend = os.environ.get("TELEOP_ROS_BACKEND", "mock").lower()
+    backend = os.environ.get("TELEOP_ROS_BACKEND", "rclpy").lower()
     if backend == "rclpy":
         return RclpyFollowerROS()
     if backend == "mock":
