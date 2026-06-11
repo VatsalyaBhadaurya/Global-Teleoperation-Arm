@@ -5,8 +5,5 @@
   "workspaces": [
     "apps/*",
     "shared/types"
-  ],
-  "dependencies": {
-    "@rolldown/binding-win32-x64-msvc": "^1.0.3"
-  }
+  ]
 }
